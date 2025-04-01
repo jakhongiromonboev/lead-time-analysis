@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Procurement Analytics</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 2rem;
+            background: linear-gradient(120deg, #2c3e50, #4ca1af);
+            color: #ecf0f1;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .upload-section {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+        .upload-section h1 {
+            font-size: 2.5rem;
+            background: linear-gradient(90deg, #ff7e5f, #feb47b);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .upload-section input {
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            font-size: 1rem;
+            border: none;
+            border-radius: 5px;
+            background: #16a085;
+            color: #ecf0f1;
+            cursor: pointer;
+        }
+        .upload-section input:hover {
+            background: #1abc9c;
+        }
+        .filter-section {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+        }
+        .filter-section select {
+            padding: 0.5rem;
+            font-size: 1rem;
+            border-radius: 5px;
+            border: none;
+            background: #16a085;
+            color: #ecf0f1;
+        }
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 1.5rem;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+        .card:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 30px rgba(0, 0, 0, 0.3);
+        }
+        .card h3 {
+            margin-bottom: 1rem;
+            font-size: 1.5rem;
+        }
+        canvas {
+            max-height: 300px;
+        }
+        #bullwhipCard {
+            grid-column: span 2;
+            background: linear-gradient(135deg, #ff7e5f, #feb47b);
+            color: #2c3e50;
+            text-align: center;
+        }
+        #bullwhipCard h3 {
+            color: #2c3e50;
+            font-size: 2rem;
+        }
+        #bullwhipCard canvas {
+            max-height: 400px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="upload-section">
+            <h1>Procurement Data Analysis</h1>
+            <input type="file" id="csvInput" accept=".csv">
+        </div>
+        <div class="filter-section">
+            <select id="supplierFilter">
+                <option value="all">All Suppliers</option>
+            </select>
+            <button id="applyFilters">Apply Filters</button>
+        </div>
+        <div class="results" id="results"></div>
+    </div>
+
+<script>
+document.getElementById('csvInput').addEventListener('change', handleFile);
+document.getElementById('applyFilters').addEventListener('click', applyFilters);
+
+let originalData = [];
+let filteredData = [];
+
+function handleFile(e) {
+    const file = e.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = function (e) {
+        const data = parseCSV(e.target.result);
+        originalData = data;
+        filteredData = data;
+        populateFilters(data);
+        analyzeData(data);
+    };
+
+    reader.readAsText(file);
+}
+
+function parseCSV(csv) {
+    const rows = csv.split('\n').slice(1);
+    return rows.map(row => {
+        const cols = row.split(',');
+        return {
+            supplier: cols[1],
+            orderDate: new Date(cols[2]),
+            expectedDelivery: new Date(cols[3]),
+            actualDelivery: new Date(cols[4]),
+            productCategory: cols[5],
+            transportMode: cols[6],
+            disruptionType: cols[8],
+            customerDemand: parseInt(cols[9]),
+            orderQuantity: parseInt(cols[10])
+        };
+    });
+}
+
+function populateFilters(data) {
+    const suppliers = [...new Set(data.map(record => record.supplier))];
+    const supplierFilter = document.getElementById('supplierFilter');
+    supplierFilter.innerHTML = '<option value="all">All</option>';
+    suppliers.forEach(supplier => {
+        const option = document.createElement('option');
+        option.value = supplier;
+        option.textContent = supplier;
+        supplierFilter.appendChild(option);
+    });
+}
+
+function applyFilters() {
+    const supplierFilter = document.getElementById('supplierFilter').value;
+    if (supplierFilter === 'all') {
+        filteredData = originalData;
+    } else {
+        filteredData = originalData.filter(record => record.supplier === supplierFilter);
+    }
+    analyzeData(filteredData);
+}
+
+function analyzeData(data) {
+    if (data.length === 0) {
+        alert("No data matches the selected filter!");
+        return;
+    }
+
+    const results = {
+        suppliers: {},
+        transportModes: {},
+        months: {},
+        disruptions: {},
+        productCategories: {},
+        demandVsOrders: {}
+    };
+
+    data.forEach(record => {
+        const leadTime = Math.ceil((record.actualDelivery - record.orderDate) / (1000 * 3600 * 24));
+        const delay = Math.ceil((record.actualDelivery - record.expectedDelivery) / (1000 * 3600 * 24));
+        const month = record.orderDate.getMonth() + 1;
+
+        updateStats(results.suppliers, record.supplier, leadTime, delay);
+        updateStats(results.transportModes, record.transportMode, leadTime, delay);
+        updateStats(results.months, month, leadTime, delay);
+        if (record.disruptionType !== 'None') {
+            updateStats(results.disruptions, record.disruptionType, leadTime, delay);
+        }
+        updateStats(results.productCategories, record.productCategory, leadTime, delay);
+
+        const yearMonth = `${record.orderDate.getFullYear()}-${record.orderDate.getMonth() + 1}`;
+        if (!results.demandVsOrders[yearMonth]) {
+            results.demandVsOrders[yearMonth] = { demand: 0, orders: 0 };
+        }
+        results.demandVsOrders[yearMonth].demand += record.customerDemand;
+        results.demandVsOrders[yearMonth].orders += record.orderQuantity;
+    });
+
+    displayResults(results);
+}
+
+function updateStats(obj, key, leadTime, delay) {
+    if (!obj[key]) {
+        obj[key] = { totalLeadTime: 0, totalDelay: 0, count: 0 };
+    }
+    obj[key].totalLeadTime += leadTime;
+    obj[key].totalDelay += delay;
+    obj[key].count++;
+}
+
+function displayResults(results) {
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '';
+
+    const suppliers = Object.entries(results.suppliers).map(([name, stats]) => ({
+        name,
+        avg: stats.totalLeadTime / stats.count
+    }));
+    const topSupplier = suppliers.sort((a, b) => b.avg - a.avg)[0];
+
+    const transportModes = Object.entries(results.transportModes).map(([name, stats]) => ({
+        name,
+        avg: stats.totalLeadTime / stats.count
+    }));
+    const bestTransport = transportModes.sort((a, b) => a.avg - b.avg)[0];
+
+    const months = Object.entries(results.months).map(([name, stats]) => ({
+        name,
+        avg: stats.totalDelay / stats.count
+    }));
+    const worstMonth = months.sort((a, b) => b.avg - a.avg)[0];
+
+    const disruptions = Object.entries(results.disruptions).map(([name, stats]) => ({
+        name,
+        avg: stats.totalDelay / stats.count
+    }));
+    const worstDisruption = disruptions.sort((a, b) => b.avg - a.avg)[0];
+
+    const products = Object.entries(results.productCategories).map(([name, stats]) => ({
+        name,
+        avg: stats.totalLeadTime / stats.count
+    }));
+    const bestProduct = products.sort((a, b) => a.avg - b.avg)[0];
+
+    resultsDiv.innerHTML += `
+        <div class="card">
+            <h3>Supplier Performance</h3>
+            <p>Highest Average Lead Time: ${topSupplier.name} (${topSupplier.avg.toFixed(1)} days)</p>
+            <canvas id="supplierChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Transportation Efficiency</h3>
+            <p>Fastest Mode: ${bestTransport.name} (${bestTransport.avg.toFixed(1)} days)</p>
+            <canvas id="transportChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Monthly Performance</h3>
+            <p>Worst Month: Month ${worstMonth.name} (Avg delay: ${worstMonth.avg.toFixed(1)} days)</p>
+            <canvas id="monthChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Disruption Impact</h3>
+            <p>Most Impactful: ${worstDisruption.name} (${worstDisruption.avg.toFixed(1)} days)</p>
+            <canvas id="disruptionChart"></canvas>
+        </div>
+
+        <div class="card">
+            <h3>Product Efficiency</h3>
+            <p>Fastest Category: ${bestProduct.name} (${bestProduct.avg.toFixed(1)} days)</p>
+            <canvas id="productChart"></canvas>
+        </div>
+
+        <div class="card" id="bullwhipCard">
+            <h3>Bullwhip Effect Analysis</h3>
+            <canvas id="bullwhipChart"></canvas>
+        </div>
+    `;
+
+    createBarChart('supplierChart', suppliers.map(s => s.name), suppliers.map(s => s.avg), 'Average Lead Time (days)');
+    createBarChart('transportChart', transportModes.map(t => t.name), transportModes.map(t => t.avg), 'Average Lead Time (days)');
+    createBarChart('monthChart', months.map(m => `Month ${m.name}`), months.map(m => m.avg), 'Average Delay (days)');
+    createBarChart('disruptionChart', disruptions.map(d => d.name), disruptions.map(d => d.avg), 'Average Delay (days)');
+    createBarChart('productChart', products.map(p => p.name), products.map(p => p.avg), 'Average Lead Time (days)');
+
+    const bullwhipData = Object.entries(results.demandVsOrders);
+    new Chart(document.getElementById('bullwhipChart'), {
+        type: 'line',
+        data: {
+            labels: bullwhipData.map(([month]) => month),
+            datasets: [{
+                label: 'Customer Demand',
+                data: bullwhipData.map(([, values]) => values.demand),
+                borderColor: '#4CAF50'
+            }, {
+                label: 'Order Quantity',
+                data: bullwhipData.map(([, values]) => values.orders),
+                borderColor: '#FF5733'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                title: { display: true, text: 'Bullwhip Effect: Demand vs. Orders' }
+            }
+        }
+    });
+}
+
+function createBarChart(canvasId, labels, data, label) {
+    new Chart(document.getElementById(canvasId), {
+        type: 'bar',
+        data: {
+            labels,
+            datasets: [{
+                label,
+                data,
+                backgroundColor: '#1abc9c',
+                borderColor: '#16a085',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: { beginAtZero: true }
+            }
+        }
+    });
+}
+</script>
+</body>
+</html>
